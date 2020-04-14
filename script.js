@@ -1,20 +1,65 @@
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// init canvas
 
 let canvas = document.getElementById('canvas');
 let context = canvas.getContext('2d');
-canvas.width = window.innerWidth - 100;
-canvas.height = window.innerHeight - 100;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// init screen lock handling
 
-let units = [];
-let selectedUnits = [];
+let isScreenLocked = false;
+
+canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock;
+document.addEventListener('click', test);
+function test() {
+    canvas.requestPointerLock();
+};
+
+document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock || document.webkitExitPointerLock;
+
+document.addEventListener('pointerlockchange', pointLockChange, false);
+document.addEventListener('mozpointerlockchange', pointLockChange, false);
+document.addEventListener('webkitpointerlockchange', pointLockChange, false);
+
+function pointLockChange(event) {
+    isScreenLocked = !isScreenLocked;
+    console.log('Screen Locked : ', isScreenLocked);
+    if (isScreenLocked) {
+        initializeEventListeners();
+        cursor.reset();
+    } else {
+        destroyEventListeners();
+    }
+};
+
+function initializeEventListeners() {
+    document.removeEventListener('click', test);
+    document.addEventListener('mousedown', mouseDownHandler);
+    document.addEventListener('mousemove', mouseMoveHandler);
+    document.addEventListener('mouseup', mouseUpHandler);
+    document.addEventListener('contextmenu', contextMenuHandler);
+};
+
+function destroyEventListeners() {
+    document.addEventListener('click', test);
+    document.removeEventListener('mousedown', mouseDownHandler);
+    document.removeEventListener('mousemove', mouseMoveHandler);
+    document.removeEventListener('mouseup', mouseUpHandler);
+    document.removeEventListener('contextmenu', contextMenuHandler);
+};
+
+window.addEventListener('resize', () => {
+     document.exitPointerLock();
+});
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// init global variables
+
 let dragBox = new DragBox();
 let border = new Border();
 let cursor = new Cursor();
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+let units = [];
+let selectedUnits = [];
 
 generateUnits();
 function generateUnits() {
@@ -23,25 +68,28 @@ function generateUnits() {
     }
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// main loop
 
 loop();
 function loop() {
     context.fillStyle = 'rgba(230, 230, 230, 1)';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    for (let unit of units) {
-        unit.update().draw();
-    }
+    if (isScreenLocked) {
+        for (let unit of units) {
+            unit.update().draw();
+        }
 
-    border.update().draw();
-    cursor.update().draw();
-    dragBox.draw();
+        cursor.update().draw();
+        border.update().draw();
+        dragBox.draw();
+    }
 
     window.requestAnimationFrame(loop);
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// support functions
+
 function randomBetween(min, max) {
     return Math.floor(Math.random() * (max - min)) + min;
 };
@@ -69,11 +117,11 @@ function getUnitsHit(vector) {
     return unitsHit;
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// objects
 
 function Unit() {
-    this.x = randomBetween(100, 500);
-    this.y = randomBetween(100, 500);
+    this.x = randomBetween(border.x, border.x + border.width);
+    this.y = randomBetween(border.x, border.x + border.height);
     this.moveX = this.x;
     this.moveY = this.y;
     this.r = 10;
@@ -129,6 +177,7 @@ function Unit() {
         if (Math.abs(this.x - this.prevX) < 0.001 && Math.abs(this.y - this.prevY) < 0.001) { // stop recursive movement
             this.stop();
         }
+
         this.prevX = this.x;
         this.prevY = this.y;
 
@@ -139,14 +188,14 @@ function Unit() {
         context.fillStyle = 'red';
         context.strokeStyle = 'red';
         context.beginPath();
-        context.arc(border.x + this.x, border.y + this.y, this.r, Math.PI * 2, false);
+        context.arc(this.x, this.y, this.r, Math.PI * 2, false);
         context.stroke();
         if (selectedUnits.includes(this)) {
             context.fill();
             context.strokeStyle = 'rgba(255, 0, 0, 0.2)';
             context.beginPath();
-            context.moveTo(border.x + this.x, border.y + this.y);
-            context.lineTo(border.x + this.moveX, border.y + this.moveY);
+            context.moveTo(this.x, this.y);
+            context.lineTo(this.moveX, this.moveY);
             context.stroke();
         }
     };
@@ -195,7 +244,6 @@ function DragBox() {
         this.y = null;
         this.offx = null;
         this.offy = null;
-        canvas.removeEventListener('mousemove', this.mouseMoveHandler);
     }; this.reset();
     this.draw = function() {
         if (this.x != null && this.offx != null) {
@@ -209,10 +257,14 @@ function DragBox() {
             context.fill();
         }
     };
-    this.mouseMoveHandler = (event) => {
+    this.setPosition = (x, y) => {
+        this.x = x;
+        this.y = y;
+    };
+    this.mouseMoveHandler = () => {
         selectedUnits = [];
-        this.offx = event.offsetX;
-        this.offy = event.offsetY;
+        this.offx = cursor.x;
+        this.offy = cursor.y;
         let lesserX = this.x;
         let greaterX = this.offx;
         if (this.offx < this.x) {
@@ -264,10 +316,10 @@ function DragBox() {
 
 function Border() {
     this.width = 2500;
-    this.height = 2500;
+    this.height = 1500;
     this.x = 0;
     this.y = 0;
-    this.speed = 10;
+    this.speed = 25;
     if (this.width < canvas.width) {
         this.x = (canvas.width - this.width) / 2;
     }
@@ -279,7 +331,7 @@ function Border() {
     };
     this.draw = () => {
         context.lineWidth = 10;
-        context.strokeStyle = 'black';
+        context.strokeStyle = 'red';
         context.strokeRect(this.x, this.y, this.width, this.height);
         context.lineWidth = 1;
 
@@ -298,39 +350,57 @@ function Border() {
         }
     };
     this.moveUp = () => {
-        console.log('Up');
         this.y += this.speed;
         if (this.y >= 0) {
             this.y =  0;
+        } else {
+            for(let unit of units) {
+                unit.y += this.speed;
+                unit.moveY += this.speed;
+            }
         }
     };
     this.moveDown = () => {
-        console.log('Down');
         this.y -= this.speed;
         if (this.y <= canvas.height - this.height) {
             this.y =  canvas.height - this.height;
+        } else {
+            for(let unit of units) {
+                unit.y -= this.speed;
+                unit.moveY -= this.speed;
+            }
         }
     };
     this.moveLeft = () => {
-        console.log('Left');
         this.x += this.speed;
         if (this.x >= 0) {
             this.x =  0;
+        } else {
+            for(let unit of units) {
+                unit.x += this.speed;
+                unit.moveX += this.speed;
+            }
         }
     };
     this.moveRight = () => {
-        console.log('Right');
         this.x -= this.speed;
         if (this.x <= canvas.width - this.width) {
             this.x =  canvas.width - this.width;
+        } else {
+            for(let unit of units) {
+                unit.x -= this.speed;
+                unit.moveX -= this.speed;
+            }
         }
     };
 };
 
 function Cursor() {
-    this.x = null;
-    this.y = null;
-    this.r = 20;
+    this.reset = () => {
+        this.x = canvas.width / 2;
+        this.y = canvas.height / 2;
+    }; this.reset();
+    this.r = 7;
     this.update = () => {
         if (this.x != null && this.y != null) {
             if (this.x <= border.x + this.r) { //  check if cursor hit border edge
@@ -367,7 +437,7 @@ function Cursor() {
     };
     this.draw = () => {
         if (this.x != null && this.y != null) {
-            context.lineWidth = 2;
+            context.lineWidth = 3;
             context.strokeStyle = 'black';
             context.beginPath();
             context.moveTo(this.x, this.y - this.r);
@@ -384,32 +454,35 @@ function Cursor() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-document.addEventListener('mousedown', (event) => {
+function mouseDownHandler(event) {
     if (event.which == 3) { // right click
         moveSelectedUnitsTo(cursor.x, cursor.y);
         return;
     } else {
         selectedUnits = [];
-        dragBox.x = event.offsetX;
-        dragBox.y = event.offsetY;
-        for (let unit of getUnitsHit({x: event.offsetX, y: event.offsetY})) {
+        dragBox.setPosition(cursor.x, cursor.y);
+        for (let unit of getUnitsHit({x: cursor.x, y: cursor.y})) {
             selectedUnits.push(unit);
         }
-        document.addEventListener('mousemove', dragBox.mouseMoveHandler);
     }
-});
+};
 
-document.addEventListener('mousemove', (event) => {
-    cursor.x = event.offsetX;
-    cursor.y = event.offsetY;
-});
+function mouseMoveHandler(event) {
+    let movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+    let movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+    cursor.x += event.movementX;
+    cursor.y += event.movementY;
+    if (dragBox.x != null && dragBox.y != null) {
+        dragBox.mouseMoveHandler();
+    }
+};
 
-document.addEventListener('mouseup', (event) => {
+function mouseUpHandler(event) {
     dragBox.reset();
-});
+};
 
-document.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-});
+function contextMenuHandler(event) {
+    event.preventDefault();
+};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
