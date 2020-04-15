@@ -35,6 +35,8 @@ function pointLockChange(event) {
 
 function initializeEventListeners() {
     document.removeEventListener('click', test);
+    document.addEventListener('keydown', keyDownHandler);
+    document.addEventListener('keyup', keyUpHandler);
     document.addEventListener('mousedown', mouseDownHandler);
     document.addEventListener('mousemove', mouseMoveHandler);
     document.addEventListener('mouseup', mouseUpHandler);
@@ -43,6 +45,8 @@ function initializeEventListeners() {
 
 function destroyEventListeners() {
     document.addEventListener('click', test);
+    document.removeEventListener('keydown', keyDownHandler);
+    document.removeEventListener('keyup', keyUpHandler);
     document.removeEventListener('mousedown', mouseDownHandler);
     document.removeEventListener('mousemove', mouseMoveHandler);
     document.removeEventListener('mouseup', mouseUpHandler);
@@ -68,11 +72,15 @@ function generateUnits() {
     }
 };
 
+let isShftDown = false;
+let isCtrlDown = false;
+let controledUnitsHotkeys = {};
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// main loop
 
 loop();
 function loop() {
-    context.fillStyle = 'rgba(230, 230, 230, 1)';
+    context.fillStyle = 'rgba(255, 255, 255, 1)';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
     if (isScreenLocked) {
@@ -102,8 +110,16 @@ function getHypothenuse(p1, p2) {
 
 function moveSelectedUnitsTo(x, y) {
     for (let unit of selectedUnits) {
-        unit.moveX = x;
-        unit.moveY = y;
+        let action = {
+            type: 'move',
+            x: x,
+            y: y
+        };
+        if (isShftDown) {
+            unit.actions.push(action);
+        } else {
+            unit.actions = [action];
+        }
     }
 };
 
@@ -122,30 +138,40 @@ function getUnitsHit(vector) {
 function Unit() {
     this.x = randomBetween(border.x, border.x + border.width);
     this.y = randomBetween(border.x, border.x + border.height);
-    this.moveX = this.x;
-    this.moveY = this.y;
     this.r = 10;
     this.speed = 5;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.currentAction = {type: 'move', x: this.x, y: this.y};
+    this.actions = [this.currentAction];
 
-    this.stop = () => {
+    this.stopCurrentAction = () => {
         this.prevX = this.x;
         this.prevY = this.y;
-        this.moveX = this.x;
-        this.moveY = this.y;
-    }; this.stop();
+        this.currentAction.x = this.x;
+        this.currentAction.y = this.y;
+        this.actions.shift();
+    };
 
     this.update = () => {
-        if (this.x != this.moveX || this.y != this.moveY) {
-            let adj = Math.abs(this.x - this.moveX);
-            let opp = Math.abs(this.y - this.moveY);
-            let hyp = getHypothenuse(this, {x: this.moveX, y: this.moveY});
+        if (this.actions.length) {
+            this.currentAction = this.actions[0];
+        } else {
+            this.updateSpacing(1);
+            return this; // do nothing if no current action
+        }
+
+        if (this.x != this.currentAction.x || this.y != this.currentAction.y) {
+            let adj = Math.abs(this.x - this.currentAction.x);
+            let opp = Math.abs(this.y - this.currentAction.y);
+            let hyp = getHypothenuse(this, {x: this.currentAction.x, y: this.currentAction.y});
             let angle;
             let dx = 0, dy = 0;
 
-            if (this.moveX <= this.x) {
+            if (this.currentAction.x <= this.x) {
                 angle = Math.acos(adj / hyp);
                 dx = -Math.cos(angle) * this.speed;
-                if (this.moveY >= this.y) {
+                if (this.currentAction.y >= this.y) {
                     dy = Math.sin(angle) * this.speed;
                 } else {
                     dy = -Math.sin(angle) * this.speed;
@@ -153,7 +179,7 @@ function Unit() {
             } else {
                 angle = Math.acos(adj / hyp);
                 dx = Math.cos(angle) * this.speed;
-                if (this.moveY >= this.y) {
+                if (this.currentAction.y >= this.y) {
                     dy = Math.sin(angle) * this.speed;
                 } else {
                     dy = -Math.sin(angle) * this.speed;
@@ -161,23 +187,22 @@ function Unit() {
             }
 
             if (hyp <= this.speed) {
-                this.stop();
+                this.stopCurrentAction();
             } else {
                 this.x += dx;
                 this.y += dy;
-                this.updateSpacing(2);
+                this.updateSpacing(5);
                 this.updateBorderSpacing();
             }
         } else {
-            this.updateSpacing(1);
             this.updateBorderSpacing();
-            this.stop();
+            this.stopCurrentAction();
         }
 
-        if (Math.abs(this.x - this.prevX) < 0.001 && Math.abs(this.y - this.prevY) < 0.001) { // stop recursive movement
-            this.stop();
+        if (Math.abs(this.x - this.prevX) < 0.001 && Math.abs(this.y - this.prevY) < 0.001) {
+            this.currentAction.x = this.x;
+            this.currentAction.y = this.y;
         }
-
         this.prevX = this.x;
         this.prevY = this.y;
 
@@ -192,11 +217,19 @@ function Unit() {
         context.stroke();
         if (selectedUnits.includes(this)) {
             context.fill();
-            context.strokeStyle = 'rgba(255, 0, 0, 0.2)';
-            context.beginPath();
-            context.moveTo(this.x, this.y);
-            context.lineTo(this.moveX, this.moveY);
-            context.stroke();
+            for (let i = 0; i < this.actions.length; i++) {
+                let action = this.actions[i];
+                let prevAction = this.actions[i - 1] ? this.actions[i - 1] : {x: this.x, y: this.y};
+                if (action.type == 'move') {
+                    context.strokeStyle = 'rgba(0, 255, 0, 1)';
+                    context.beginPath();
+                    context.moveTo(prevAction.x, prevAction.y);
+                    context.lineTo(action.x, action.y);
+                    context.stroke();
+                } else if (action.type == 'attack') {
+
+                }
+            }
         }
     };
 
@@ -204,8 +237,10 @@ function Unit() {
         for (let unit of units) {
             if (this != unit) {
                 if (this.x == unit.x && this.y == unit.y) {
-                    this.x = this.prevX;
-                    this.y = this.prevY;
+                    this.x += randomBetween(-this.speed, this.speed + 1);
+                    this.y += randomBetween(-this.speed, this.speed + 1);
+                    unit.x += randomBetween(-unit.speed, unit.speed + 1);
+                    unit.y += randomBetween(-unit.speed, unit.speed + 1);
                 }
 
                 let radiusSum = (this.r + unit.r) / div;
@@ -217,8 +252,8 @@ function Unit() {
                     let dx = diff_x / hyp;
                     let dy = diff_y / hyp;
 
-                    this.x = unit.x + (radiusSum) * dx || this.moveX;
-                    this.y = unit.y + (radiusSum) * dy || this.moveY;
+                    this.x = unit.x + (radiusSum) * dx || this.currentAction.x;
+                    this.y = unit.y + (radiusSum) * dy || this.currentAction.y;
                 }
             }
         }
@@ -236,6 +271,17 @@ function Unit() {
             this.y = border.y + border.height - this.r;
         }
     }; this.updateBorderSpacing();
+
+    this.updatePositionRelativeToBorder = (x_move, y_move) => {
+        this.x += x_move;
+        this.y += y_move;
+        for (let action of this.actions) {
+            if (action.x && action.y) {
+                action.x += x_move;
+                action.y += y_move;
+            }
+        }
+    };
 };
 
 function DragBox() {
@@ -312,6 +358,12 @@ function DragBox() {
             }
         }
     };
+    this.updatePositionRelativeToBorder = (x_move, y_move) => {
+        this.x += x_move;
+        this.y += y_move;
+        dragBox.offy = cursor.y;
+        dragBox.offx = cursor.x;
+    };
 };
 
 function Border() {
@@ -355,8 +407,10 @@ function Border() {
             this.y =  0;
         } else {
             for(let unit of units) {
-                unit.y += this.speed;
-                unit.moveY += this.speed;
+                unit.updatePositionRelativeToBorder(0, this.speed);
+            }
+            if (dragBox.y != null && dragBox.offy != null) {
+                dragBox.updatePositionRelativeToBorder(0, this.speed);
             }
         }
     };
@@ -366,8 +420,10 @@ function Border() {
             this.y =  canvas.height - this.height;
         } else {
             for(let unit of units) {
-                unit.y -= this.speed;
-                unit.moveY -= this.speed;
+                unit.updatePositionRelativeToBorder(0, -this.speed);
+            }
+            if (dragBox.y != null && dragBox.offy != null) {
+                dragBox.updatePositionRelativeToBorder(0, -this.speed);
             }
         }
     };
@@ -377,8 +433,10 @@ function Border() {
             this.x =  0;
         } else {
             for(let unit of units) {
-                unit.x += this.speed;
-                unit.moveX += this.speed;
+                unit.updatePositionRelativeToBorder(this.speed, 0);
+            }
+            if (dragBox.x != null && dragBox.offx != null) {
+                dragBox.updatePositionRelativeToBorder(this.speed, 0);
             }
         }
     };
@@ -388,8 +446,10 @@ function Border() {
             this.x =  canvas.width - this.width;
         } else {
             for(let unit of units) {
-                unit.x -= this.speed;
-                unit.moveX -= this.speed;
+                unit.updatePositionRelativeToBorder(-this.speed, 0);
+            }
+            if (dragBox.x != null && dragBox.offx != null) {
+                dragBox.updatePositionRelativeToBorder(-this.speed, 0);
             }
         }
     };
@@ -453,6 +513,40 @@ function Cursor() {
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function keyDownHandler(event) {
+    if (event.code == 'ControlLeft') {
+        event.preventDefault();
+        isCtrlDown = true;
+    } else if (event.code == 'ShiftLeft') {
+        event.preventDefault();
+        isShftDown = true;
+    } else if (event.code.indexOf('Digit') > -1) {
+        event.preventDefault();
+        if (isCtrlDown) {
+            controledUnitsHotkeys[event.key] = [...selectedUnits];
+        } else {
+            if (controledUnitsHotkeys[event.key] && controledUnitsHotkeys[event.key].length) {
+                selectedUnits = [...controledUnitsHotkeys[event.key]];
+            } else {
+                selectedUnits = [];
+            }
+        }
+    } else if (event.code == 'KeyA') {
+        event.preventDefault();
+        if (isCtrlDown) {
+            selectedUnits = [...units];
+        }
+    }
+};
+
+function keyUpHandler(event) {
+    if (event.code == 'ControlLeft') {
+        isCtrlDown = false;
+    } else if (event.code == 'ShiftLeft') {
+        isShftDown = false;
+    }
+};
 
 function mouseDownHandler(event) {
     if (event.which == 3) { // right click
